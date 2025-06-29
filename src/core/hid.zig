@@ -22,6 +22,10 @@ pub const Modifiers = packed struct(u8) {
         return .from(lhs.mask() | rhs.mask());
     }
 
+    pub fn pop(lhs: Modifiers, rhs: Modifiers) Modifiers {
+        return .from(lhs.mask() & ~rhs.mask());
+    }
+
     pub const empty: Modifiers = @bitCast(@as(u8, 0));
 
     pub const lc: Modifiers = blk: {
@@ -72,3 +76,86 @@ pub const Modifiers = packed struct(u8) {
         break :blk value;
     };
 };
+
+pub const Report = extern struct {
+    modifiers: Modifiers,
+    keycodes: [N]Keycode,
+
+    pub fn initEmpty() Report {
+        return .{
+            .modifiers = .empty,
+            .keycodes = .{0} ** N,
+        };
+    }
+
+    pub fn eql(self: *const Report, rhs: Report) bool {
+        return std.mem.eql(
+            u8,
+            std.mem.asBytes(self),
+            std.mem.asBytes(&rhs),
+        );
+    }
+
+    pub fn addModifiers(self: *Report, modifiers: Modifiers) void {
+        self.modifiers = self.modifiers.add(modifiers);
+    }
+
+    pub fn popModifiers(self: *Report, modifiers: Modifiers) void {
+        self.modifiers = self.modifiers.pop(modifiers);
+    }
+
+    pub fn addKeycode(self: *Report, keycode: Keycode) !void {
+        for (&self.keycodes) |*kc| {
+            // already in place
+            if (kc.* == keycode) {
+                return;
+            }
+
+            // empty slot
+            if (kc.* == 0) {
+                kc.* = keycode;
+                return;
+            }
+        }
+
+        return error.OutOfMemory;
+    }
+
+    pub fn popKeycode(self: *Report, keycode: Keycode) !void {
+        for (&self.keycodes) |*kc| {
+            if (kc.* == keycode) {
+                kc.* = 0;
+                return;
+            }
+        }
+
+        return error.NotFound;
+    }
+
+    const N = 6;
+};
+
+pub const HostLeds = packed struct(u8) {
+    num: bool,
+    caps: bool,
+    scroll: bool,
+    compose: bool,
+    kana: bool,
+    _: u3,
+
+    pub const empty: HostLeds = @bitCast(@as(u8, 0));
+};
+
+pub const State = extern struct {
+    report: Report,
+    host_leds: HostLeds,
+
+    pub fn init() State {
+        return .{
+            .report = .initEmpty(),
+            .host_leds = .empty,
+        };
+    }
+};
+
+const std = @import("std");

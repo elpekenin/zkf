@@ -6,6 +6,7 @@ pub const Keycode = union(enum) {
     hid: hid.Keycode,
     with_mods: WithModifiers,
     layer_with_mods: LayerWithModifiers,
+    user: User,
 
     fn addMods(keycode: Keycode, mods: hid.Modifiers) Keycode {
         return switch (keycode) {
@@ -69,11 +70,33 @@ pub const Keycode = union(enum) {
     }
 
     // layer mod
-    pub fn LM(layer_num: layer.Index, modifiers: hid.Modifiers) Keycode {
+    pub fn LM(layer: usize, modifiers: hid.Modifiers) Keycode {
         return .{
             .layer_with_mods = .{
-                .layer = layer_num,
+                .layer = layer,
                 .modifiers = modifiers,
+            },
+        };
+    }
+
+    pub fn Custom(handler: User.BasicFn) Keycode {
+        return .{
+            .user = .{
+                .data = undefined,
+                .handler = .{
+                    .basic = handler,
+                },
+            },
+        };
+    }
+
+    pub fn CustomAdvanced(handler: User.BasicFn, data: *anyopaque) Keycode {
+        return .{
+            .user = .{
+                .data = data,
+                .handler = .{
+                    .advanced = handler,
+                },
             },
         };
     }
@@ -91,7 +114,7 @@ const WithModifiers = struct {
 };
 
 const LayerWithModifiers = struct {
-    layer: layer.Index,
+    layer: usize,
     modifiers: hid.Modifiers,
 
     pub fn addMods(lhs: LayerWithModifiers, modifiers: hid.Modifiers) LayerWithModifiers {
@@ -101,5 +124,15 @@ const LayerWithModifiers = struct {
     }
 };
 
+const User = struct {
+    handler: union(enum) {
+        basic: BasicFn,
+        advanced: AdvancedFn,
+    },
+    data: *anyopaque,
+
+    const BasicFn = *const fn (bool) void;
+    const AdvancedFn = *const fn (*anyopaque, bool) void;
+};
+
 const hid = @import("hid.zig");
-const layer = @import("layer.zig");

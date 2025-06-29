@@ -133,6 +133,6 @@ pub fn init(usb_dev: type) void {
     std.log.debug("USB configured", .{});
 }
 
-pub fn send_keyboard_report(usb_dev: type, keycodes: *[7]u8) void {
+pub fn send_keyboard_report(usb_dev: type, keycodes: *const [7]u8) void {
     usb_dev.callbacks.usb_start_tx(keyboardEpAddr, keycodes);
 }

@@ -2,8 +2,7 @@
 /// eg: 32 -> u5, 4 -> u2, 10 -> u4
 pub fn Index(comptime n_bits: usize) type {
     var n = std.math.log2(n_bits);
-    // if not a power of 2, we need an extra bit
-    if (2 << n != n_bits) {
+    if ((1 << n) < n_bits) {
         n += 1;
     }
 
@@ -15,23 +14,6 @@ pub fn Index(comptime n_bits: usize) type {
     };
 
     return @Type(info);
-}
-
-pub fn KeyStateFromKeymap(comptime keymap: Keymap) type {
-    if (keymap.len == 0) {
-        @compileError("Keymap can't be an empty array");
-    }
-
-    const n_keys = keymap[0].len;
-
-    // validate all layers have the same number of keycodes
-    inline for (keymap[1..]) |layer| {
-        if (layer.len != n_keys) {
-            @compileError("Layers' size doesn't match");
-        }
-    }
-
-    return std.StaticBitSet(n_keys);
 }
 
 pub fn KeyStateFromLayout(comptime layout: Layout) type {
@@ -61,7 +43,7 @@ pub fn KeyStateFromLayout(comptime layout: Layout) type {
                     @compileError(msg);
                 }
 
-                seen.setValue(index, true);
+                seen.set(index);
             }
         }
     }
