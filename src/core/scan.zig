@@ -59,7 +59,6 @@ pub fn matrix(
 
 const std = @import("std");
 const comptimePrint = std.fmt.comptimePrint;
-const Struct = std.builtin.Type.Struct;
 
 const types = @import("types.zig");
 const DelayFn = *const fn () void;

@@ -82,10 +82,7 @@ pub const Keycode = union(enum) {
     pub fn Custom(handler: User.BasicFn) Keycode {
         return .{
             .user = .{
-                .data = undefined,
-                .handler = .{
-                    .basic = handler,
-                },
+                .basic = handler,
             },
         };
     }
@@ -93,9 +90,9 @@ pub const Keycode = union(enum) {
     pub fn CustomAdvanced(handler: User.BasicFn, data: *anyopaque) Keycode {
         return .{
             .user = .{
-                .data = data,
-                .handler = .{
-                    .advanced = handler,
+                .advanced = .{
+                    .function = handler,
+                    .data = data,
                 },
             },
         };
@@ -124,12 +121,12 @@ const LayerWithModifiers = struct {
     }
 };
 
-const User = struct {
-    handler: union(enum) {
-        basic: BasicFn,
-        advanced: AdvancedFn,
+const User = union(enum) {
+    basic: BasicFn,
+    advanced: struct {
+        function: AdvancedFn,
+        data: *anyopaque,
     },
-    data: *anyopaque,
 
     const BasicFn = *const fn (bool) void;
     const AdvancedFn = *const fn (*anyopaque, bool) void;

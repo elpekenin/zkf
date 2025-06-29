@@ -1,10 +1,7 @@
-const std = @import("std");
-
 const microzig = @import("microzig");
 const usb_if = @import("usb_if.zig");
 const rp2xxx = microzig.hal;
 const time = rp2xxx.time;
-const usb = rp2xxx.usb;
 const usb_dev = rp2xxx.usb.Usb(.{});
 
 //
@@ -21,7 +18,7 @@ const pins_config: rp2xxx.pins.GlobalConfiguration = .{
     .GPIO6 = .{ .name = "R3", .direction = .out },
     .GPIO7 = .{ .name = "R4", .direction = .out },
     //
-    .GPIO25 = .{ .name = "led", .direction = .out },
+    .GPIO25 = .{ .name = "LED", .direction = .out },
 };
 const pins = pins_config.pins();
 
@@ -30,7 +27,7 @@ const pins = pins_config.pins();
 //
 fn ledHandler(pressed: bool) void {
     const value = @intFromBool(pressed);
-    pins.led.put(value);
+    pins.LED.put(value);
 }
 const LED: zkf.Keycode = .Custom(ledHandler);
 

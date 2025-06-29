@@ -103,8 +103,12 @@ pub fn Keyboard(builder: KeyboardConfig) type {
         }
 
         pub fn layerGetHighest(self: *const Self) LayerIndex {
-            const ret = self.layers.findFirstSet().?;
-            return @intCast(ret);
+            // function finds first from LSB, thus we need to `@bitReverse` before using it, we want the first from MSB
+            const reversed: LayerState = .{
+                .mask = @bitReverse(self.layers.mask)
+            };
+            const index = reversed.findFirstSet() orelse @panic("layer 0 expected to always be set");
+            return @intCast(index);
         }
 
         fn keycodeAt(self: *const Self, layer: LayerIndex, key: KeyIndex) Keycode {
@@ -141,8 +145,6 @@ pub fn Keyboard(builder: KeyboardConfig) type {
 
         pub fn scanAndProcess(self: *Self) void {
             const keys = scanKeys();
-
-            // dont forget to update
             defer self.keys = keys;
 
             const changes = self.keys.xorWith(keys);
@@ -154,7 +156,9 @@ pub fn Keyboard(builder: KeyboardConfig) type {
                 const keycode = self.keycodeGet(index);
                 const pressed = keys.isSet(index);
 
-                self.process(keycode, pressed) catch {};
+                self.process(keycode, pressed) catch |e| {
+                    std.log.err("Processing {}",.{ keycode, e });
+                };
             }
         }
 
@@ -196,9 +200,9 @@ pub fn Keyboard(builder: KeyboardConfig) type {
                     }
                 },
                 .user => |kc| {
-                    switch (kc.handler) {
-                        .basic => |func| func(pressed),
-                        .advanced => |func| func(kc.data, pressed),
+                    switch (kc) {
+                        .basic => |function| function(pressed),
+                        .advanced => |config| config.function(config.data, pressed),
                     }
                 },
             }
@@ -228,7 +232,7 @@ fn getNKeys(comptime keymap: types.Keymap) usize {
 fn validateScanFunction(comptime Expected: type, comptime Scan: type) void {
     const scan_info = @typeInfo(Scan);
 
-    const valid, const ret_type = switch (scan_info) {
+    const valid, const Found = switch (scan_info) {
         .pointer => |pointer| blk: {
             const C = pointer.child;
             const c_info = @typeInfo(C);
@@ -249,10 +253,10 @@ fn validateScanFunction(comptime Expected: type, comptime Scan: type) void {
         @compileError("scan_fn must be a pointer to a function");
     }
 
-    if (Expected != ret_type) {
-        const msg = comptimePrint("Mismatch between layout and scan. Expected return value of {s}, got {s}", .{
-            @typeName(Expected),
-            @typeName(ret_type),
+    if (Expected != Found) {
+        const msg = comptimePrint("Mismatch between layout and scan. Expected return value of {}, got {}", .{
+            Expected,
+            Found,
         });
         @compileError(msg);
     }
