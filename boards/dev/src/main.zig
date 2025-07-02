@@ -77,7 +77,7 @@ pub fn main() !void {
     pins_config.apply();
     usb_if.init(usb_dev);
 
-    var keyboard: Keyboard = .initEmpty();
+    var keyboard: Keyboard = .new();
 
     while (true) {
         // Process pending USB housekeeping

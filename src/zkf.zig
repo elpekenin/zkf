@@ -9,3 +9,8 @@ pub const Layout = types.Layout;
 
 const keycodes = @import("core/keycodes.zig");
 const types = @import("core/types.zig");
+
+comptime {
+    _ = hid;
+    _ = KeyboardConfig;
+}

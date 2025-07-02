@@ -48,15 +48,15 @@ pub fn Keyboard(builder: KeyboardConfig) type {
     else
         @compileError("Keymap was not configured");
     const n_keys, const n_layers = .{ getNKeys(keymap), keymap.len };
-    const KeyState, const LayerState = .{ std.StaticBitSet(n_keys), std.StaticBitSet(n_layers) };
+    const KeysState, const LayerState = .{ std.StaticBitSet(n_keys), std.StaticBitSet(n_layers) };
     validateKeycodes(keymap, n_layers);
 
     const scan_info = if (builder.scan_info) |scan|
         scan
     else
         @compileError("Function to scan keys was not configured");
-    const scanKeys: scan_info.type = @ptrCast(@alignCast(scan_info.ptr));
-    validateScanFunction(KeyState, scan_info.type);
+    const scan: scan_info.type = @ptrCast(@alignCast(scan_info.ptr));
+    validateScanFunction(KeysState, scan_info.type);
 
     const sendHid = if (builder.send_hid) |sendHid|
         sendHid
@@ -70,10 +70,10 @@ pub fn Keyboard(builder: KeyboardConfig) type {
 
     return struct {
         hid: hid.State,
-        keys: KeyState,
+        keys: KeysState,
         layers: LayerState,
 
-        pub fn initEmpty() Self {
+        pub fn new() Self {
             // 0 is default layer, enabled by default
             var layers: LayerState = .initEmpty();
             layers.set(0);
@@ -104,9 +104,7 @@ pub fn Keyboard(builder: KeyboardConfig) type {
 
         pub fn layerGetHighest(self: *const Self) LayerIndex {
             // function finds first from LSB, thus we need to `@bitReverse` before using it, we want the first from MSB
-            const reversed: LayerState = .{
-                .mask = @bitReverse(self.layers.mask)
-            };
+            const reversed: LayerState = .{ .mask = @bitReverse(self.layers.mask) };
             const index = reversed.findFirstSet() orelse @panic("layer 0 expected to always be set");
             return @intCast(index);
         }
@@ -143,11 +141,19 @@ pub fn Keyboard(builder: KeyboardConfig) type {
             return self.keys.isSet(index);
         }
 
+        pub fn keysScan(_: *const Self) KeysState {
+            return scan();
+        }
+
+        fn keysDifference(lhs: KeysState, rhs: KeysState) KeysState {
+            return lhs.xorWith(rhs);
+        }
+
         pub fn scanAndProcess(self: *Self) void {
-            const keys = scanKeys();
+            const keys = scan();
             defer self.keys = keys;
 
-            const changes = self.keys.xorWith(keys);
+            const changes = keysDifference(self.keys, keys);
 
             var iterator = changes.iterator(.{});
             while (iterator.next()) |raw| {
@@ -157,7 +163,7 @@ pub fn Keyboard(builder: KeyboardConfig) type {
                 const pressed = keys.isSet(index);
 
                 self.process(keycode, pressed) catch |e| {
-                    std.log.err("Processing {}",.{ keycode, e });
+                    std.log.err("Processing {}", .{ keycode, e });
                 };
             }
         }
@@ -287,8 +293,71 @@ fn validateKeycodes(comptime keymap: types.Keymap, comptime n_layers: usize) voi
     }
 }
 
+//
+// test suite
+//
+
+const TestState = std.StaticBitSet(2);
+
+fn fixtureScan(scans: []const TestState) fn () TestState {
+    return struct {
+        var i: usize = 0;
+        fn scan() TestState {
+            i = (i + 1) % scans.len;
+            return scans[i];
+        }
+    }.scan;
+}
+
+fn testSendHid(_: hid.Report) void {}
+
+const TestConfig = new()
+    .setKeymap(&.{
+        // zig fmt: off
+        &.{
+            .XXX, .___,
+        },
+        // zig fmt: on
+    })
+    .setSendHid(testSendHid);
+
+test "Keyboard.keysDifference" {
+    const scan = fixtureScan(&.{
+        .{ .mask = 0b11 },
+        .{ .mask = 0b01 },
+    });
+
+    const KB = TestConfig
+        .setScan(&scan)
+        .Keyboard();
+
+    var keyboard: KB = .new();
+
+    const expected: TestState = .{ .mask = 0b10 };
+    const actual = KB.keysDifference(keyboard.keysScan(), keyboard.keysScan());
+    try t.expectEqual(expected, actual);
+}
+
+test "Keyboard.keysDifference multiple changes" {
+    const scan = fixtureScan(&.{
+        .{ .mask = 0b10 },
+        .{ .mask = 0b01 },
+    });
+
+    const KB = TestConfig
+        .setScan(&scan)
+        .Keyboard();
+
+    var keyboard: KB = .new();
+
+    const expected: TestState = .{ .mask = 0b11 };
+    const actual = KB.keysDifference(keyboard.keysScan(), keyboard.keysScan());
+    try t.expectEqual(expected, actual);
+}
+
 const std = @import("std");
 const comptimePrint = std.fmt.comptimePrint;
+const t = std.testing;
 
 const KeyboardConfig = @This();
 const keycodes = @import("keycodes.zig");

@@ -79,12 +79,12 @@ pub const Modifiers = packed struct(u8) {
 
 pub const Report = extern struct {
     modifiers: Modifiers,
-    keycodes: [N]Keycode,
+    keycodes: [N_KEYCODES]Keycode,
 
     pub fn initEmpty() Report {
         return .{
             .modifiers = .empty,
-            .keycodes = .{0} ** N,
+            .keycodes = .{0} ** N_KEYCODES,
         };
     }
 
@@ -132,7 +132,7 @@ pub const Report = extern struct {
         return error.NotFound;
     }
 
-    const N = 6;
+    const N_KEYCODES = 6;
 };
 
 pub const HostLeds = packed struct(u8) {
@@ -158,4 +158,62 @@ pub const State = extern struct {
     }
 };
 
+//
+// test suite
+//
+
+// Modifiers
+
+test "Modifiers.add" {
+    var expected: Modifiers = .empty;
+    expected.left_shift = true;
+    expected.left_control = true;
+
+    const actual = Modifiers.empty.add(.ls).add(.lc);
+
+    try t.expectEqual(expected, actual);
+}
+
+test "Modifiers.pop" {
+    const expected: Modifiers = .lc;
+    const actual = Modifiers.ls.add(.lc).pop(.ls);
+    try t.expectEqual(expected, actual);
+}
+
+// Report
+
+test "Report.addKeycode" {
+    var report: Report = .initEmpty();
+
+    const keycode: Keycode = 123;
+    try report.addKeycode(keycode);
+
+    for (report.keycodes) |actual| {
+        if (actual == keycode) {
+            break;
+        }
+    } else {
+        return error.KeycodeNotAdded;
+    }
+}
+
+test "Report.addKeycode no error on duplicate" {
+    var report: Report = .initEmpty();
+
+    const keycode: Keycode = 123;
+    try report.addKeycode(keycode);
+    report.addKeycode(keycode) catch return error.ShouldNotError;
+}
+
+test "Report.addKeycode error if full" {
+    var report: Report = .initEmpty();
+
+    for (0..Report.N_KEYCODES) |i| {
+        try report.addKeycode(@intCast(i + 1));
+    }
+
+    try t.expectError(error.OutOfMemory, report.addKeycode(123));
+}
+
 const std = @import("std");
+const t = std.testing;

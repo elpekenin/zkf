@@ -1,0 +1,39 @@
+repos:
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+      - id: codespell
+        args: [-w]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: local
+    hooks:
+      - id: format
+        name: format
+        description: format
+        language: system
+        entry: zig fmt
+        files: \.zig$
+      - id: lint
+        name: lint
+        description: lint
+        language: system
+        entry: zlint
+        files: \.zig$
+      - id: test
+        name: test
+        description: run unit tests
+        language: system
+        entry: zig build test
+        pass_filenames: false
+      - id: build
+        name: build
+        description: build sample board
+        language: system
+        entry: bash -c 'cd boards/dev && zig build'
+        pass_filenames: false
