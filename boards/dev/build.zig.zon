@@ -8,8 +8,8 @@
             .path = "../..",
         },
         .microzig = .{
-            .url = "https://github.com/ZigEmbeddedGroup/microzig/releases/download/0.14.1/microzig.tar.gz",
-            .hash = "microzig-0.14.1-D20YSWs2CAC8_NXi4HglJctgh00Fst0GQFl3s1TQKbx-",
+            .url = "git+https://github.com/ZigEmbeddedGroup/microzig#d9031ddf98d3f05e64d524b22497d92ad733981f",
+            .hash = "microzig-0.14.1-D20YSYrJ1gDVmMQx6ecf1AowMwuVQioXf1UYB33XtWU9",
         },
     },
     .paths = .{

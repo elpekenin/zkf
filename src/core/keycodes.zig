@@ -24,7 +24,7 @@ pub const Keycode = union(enum) {
             },
             else => {
                 if (@inComptime()) {
-                    @compileError("Can't add modifiers to this keycode");
+                    @compileError("can't add modifiers to this keycode");
                 }
 
                 @panic("TODO: Decide how to handle this");
@@ -111,7 +111,7 @@ const WithModifiers = struct {
 };
 
 const LayerWithModifiers = struct {
-    layer: usize,
+    layer: Layers.Id,
     modifiers: hid.Modifiers,
 
     pub fn addMods(lhs: LayerWithModifiers, modifiers: hid.Modifiers) LayerWithModifiers {
@@ -133,3 +133,4 @@ const User = union(enum) {
 };
 
 const hid = @import("hid.zig");
+const Layers = @import("Layers.zig");

@@ -23,7 +23,7 @@ repos:
         name: lint
         description: lint
         language: system
-        entry: zlint
+        entry: zlint --verbose
         files: \.zig$
       - id: test
         name: test

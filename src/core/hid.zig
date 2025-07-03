@@ -1,5 +1,3 @@
-pub const Keycode = u8;
-
 pub const Modifiers = packed struct(u8) {
     left_control: bool,
     left_shift: bool,
@@ -150,7 +148,7 @@ pub const State = extern struct {
     report: Report,
     host_leds: HostLeds,
 
-    pub fn init() State {
+    pub fn initEmpty() State {
         return .{
             .report = .initEmpty(),
             .host_leds = .empty,
@@ -158,11 +156,10 @@ pub const State = extern struct {
     }
 };
 
-//
-// test suite
-//
+const t = std.testing;
+pub const Keycode = u8;
 
-// Modifiers
+const std = @import("std");
 
 test "Modifiers.add" {
     var expected: Modifiers = .empty;
@@ -179,8 +176,6 @@ test "Modifiers.pop" {
     const actual = Modifiers.ls.add(.lc).pop(.ls);
     try t.expectEqual(expected, actual);
 }
-
-// Report
 
 test "Report.addKeycode" {
     var report: Report = .initEmpty();
@@ -214,6 +209,3 @@ test "Report.addKeycode error if full" {
 
     try t.expectError(error.OutOfMemory, report.addKeycode(123));
 }
-
-const std = @import("std");
-const t = std.testing;
