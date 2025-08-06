@@ -4,7 +4,12 @@
     .version = "0.0.0",
     .fingerprint = 0x84ff42959fe44d0e,
     .minimum_zig_version = "0.14.1",
-    .dependencies = .{},
+    .dependencies = .{
+        .serpent = .{
+            .url = "git+https://github.com/tr1ckydev/serpent#c10870044ad7c0021e8028ebe9636b2283bfd8f2",
+            .hash = "serpent-1.0.0-43UO7hS5BQBDA59SEVwpeHkGV8KZSe3EnP-3grfT5C_Q",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",

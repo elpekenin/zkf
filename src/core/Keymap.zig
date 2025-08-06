@@ -6,7 +6,7 @@ pub fn from(raw: Raw) Keymap {
     };
 }
 
-pub fn get(self: *const Keymap, layer: Layers.Id, key: Keys.Id) Keycode {
+pub fn get(self: *const Keymap, layer: Layers.Id, key: keys.Id) Keycode {
     return self.inner[layer][key];
 }
 
@@ -15,5 +15,5 @@ const Keymap = @This();
 pub const Raw = []const []const Keycode;
 
 const keycodes = @import("keycodes.zig");
-const Keys = @import("Keys.zig");
+const keys = @import("keys.zig");
 const Layers = @import("Layers.zig");

@@ -29,62 +29,104 @@ pub const HID_KeymodifierCodes = enum(u8) {
     right_gui,
 };
 
+fn info(args: anytype) std.builtin.Type.Struct {
+    return @typeInfo(@TypeOf(args)).@"struct";
+}
+
+fn len(args: anytype) usize {
+    var length: usize = 0;
+    inline for (info(args).fields) |field| {
+        length += @field(args, field.name).len;
+    }
+    return length;
+}
+
+fn flatten(args: anytype) [len(args)]u8 {
+    var array: [len(args)]u8 = undefined;
+
+    var i: usize = 0;
+    inline for (info(args).fields) |field| {
+        const value: []const u8 = &@field(args, field.name);
+
+        const length = value.len;
+        defer i += length;
+
+        @memcpy(array[i .. i + length], value);
+    }
+
+    return array;
+}
+
 // HID descriptor for keyboard
-const KeyboardReportDescriptor = hid.hid_usage_page(1, hid.UsageTable.desktop) ++
-    hid.hid_usage(1, hid.DesktopUsage.keyboard) ++
-    hid.hid_collection(hid.CollectionItem.Application) ++
-    hid.hid_usage_page(1, hid.UsageTable.keyboard) ++
-    hid.hid_usage_min(1, .{@intFromEnum(HID_KeymodifierCodes.left_alt)}) ++
-    hid.hid_usage_max(1, .{@intFromEnum(HID_KeymodifierCodes.right_shift)}) ++
-    hid.hid_logical_min(1, "\x00".*) ++
-    hid.hid_logical_max(1, "\x01".*) ++
-    hid.hid_report_size(1, "\x01".*) ++
-    hid.hid_report_count(1, "\x08".*) ++
-    hid.hid_input(hid.HID_DATA | hid.HID_VARIABLE | hid.HID_ABSOLUTE) ++
-    hid.hid_report_count(1, "\x06".*) ++
-    hid.hid_report_size(1, "\x08".*) ++
-    hid.hid_logical_max(1, "\x65".*) ++
-    hid.hid_usage_min(1, "\x00".*) ++
-    hid.hid_usage_max(1, "\x65".*) ++
-    hid.hid_input(hid.HID_DATA | hid.HID_ARRAY | hid.HID_ABSOLUTE) ++
-    hid.hid_collection_end();
+const KeyboardReportDescriptor = flatten(.{
+    hid.hid_usage_page(1, hid.UsageTable.desktop),
+    hid.hid_usage(1, hid.DesktopUsage.keyboard),
+    hid.hid_collection(hid.CollectionItem.Application),
+    hid.hid_usage_page(1, hid.UsageTable.keyboard),
+    hid.hid_usage_min(1, .{@intFromEnum(HID_KeymodifierCodes.left_alt)}),
+    hid.hid_usage_max(1, .{@intFromEnum(HID_KeymodifierCodes.right_shift)}),
+    hid.hid_logical_min(1, "\x00".*),
+    hid.hid_logical_max(1, "\x01".*),
+    hid.hid_report_size(1, "\x01".*),
+    hid.hid_report_count(1, "\x08".*),
+    hid.hid_input(hid.HID_DATA | hid.HID_VARIABLE | hid.HID_ABSOLUTE),
+    hid.hid_report_count(1, "\x06".*),
+    hid.hid_report_size(1, "\x08".*),
+    hid.hid_logical_max(1, "\x65".*),
+    hid.hid_usage_min(1, "\x00".*),
+    hid.hid_usage_max(1, "\x65".*),
+    hid.hid_input(hid.HID_DATA | hid.HID_ARRAY | hid.HID_ABSOLUTE),
+    hid.hid_collection_end(),
+});
 
 // HID report buffer
 const keyboardEpAddr = rp2xxx.usb.Endpoint.to_address(1, .In);
 
 const usb_packet_size = 7;
 const usb_config_len = usb.templates.config_descriptor_len + usb.templates.hid_in_descriptor_len;
-const usb_config_descriptor = usb.templates.config_descriptor(1, 1, 0, usb_config_len, 0x80, 500) ++
-    (usb.types.InterfaceDescriptor{
-        .interface_number = 1,
-        .alternate_setting = 0,
-        .num_endpoints = 1,
-        .interface_class = 3,
-        .interface_subclass = 1,
-        .interface_protocol = 1,
-        .interface_s = 5,
-    }).serialize() ++
-    (hid.HidDescriptor{
-        .bcd_hid = 0x0111,
-        .country_code = 0,
-        .num_descriptors = 1,
-        .report_length = KeyboardReportDescriptor.len,
-    }).serialize() ++
-    (usb.types.EndpointDescriptor{
-        .endpoint_address = keyboardEpAddr,
-        .attributes = @intFromEnum(usb.types.TransferType.Interrupt),
-        .max_packet_size = usb_packet_size,
-        .interval = 10,
-    }).serialize();
+
+const interface_descriptor: usb.types.InterfaceDescriptor = .{
+    .interface_number = 1,
+    .alternate_setting = 0,
+    .num_endpoints = 1,
+    .interface_class = 3,
+    .interface_subclass = 1,
+    .interface_protocol = 1,
+    .interface_s = 5,
+};
+
+const hid_descriptor: hid.HidDescriptor = .{
+    .bcd_hid = 0x0111,
+    .country_code = 0,
+    .num_descriptors = 1,
+    .report_length = KeyboardReportDescriptor.len,
+};
+
+const endpoint_descriptor: usb.types.EndpointDescriptor = .{
+    .endpoint_address = keyboardEpAddr,
+    .attributes = @intFromEnum(usb.types.TransferType.Interrupt),
+    .max_packet_size = usb_packet_size,
+    .interval = 10,
+};
+
+const usb_config_descriptor = flatten(.{
+    usb.templates.config_descriptor(1, 1, 0, usb_config_len, 0x80, 500),
+    interface_descriptor.serialize(),
+    hid_descriptor.serialize(),
+    endpoint_descriptor.serialize(),
+});
 
 // Create keyboard HID driver
-var driver_keyboard = usb.hid.HidClassDriver{
+var driver_keyboard: usb.hid.HidClassDriver = .{
     .ep_in = keyboardEpAddr,
     .report_descriptor = &KeyboardReportDescriptor,
 };
 
+var drivers_buff: [1]usb.types.UsbClassDriver = .{
+    driver_keyboard.driver(),
+};
 // Register both drivers
-var drivers = [_]usb.types.UsbClassDriver{driver_keyboard.driver()};
+const drivers: []usb.types.UsbClassDriver = &drivers_buff;
 
 // This is our device configuration
 pub var DEVICE_CONFIGURATION: usb.DeviceConfiguration = .{
@@ -114,7 +156,7 @@ pub var DEVICE_CONFIGURATION: usb.DeviceConfiguration = .{
         &usb.utils.utf8_to_utf16_le("Accelerometer"),
         &usb.utils.utf8_to_utf16_le("Flippers"),
     },
-    .drivers = &drivers,
+    .drivers = drivers,
 };
 
 pub fn init(usb_dev: type) void {
@@ -129,6 +171,8 @@ pub fn init(usb_dev: type) void {
     std.log.debug("USB configured", .{});
 }
 
-pub fn send_keyboard_report(usb_dev: type, keycodes: *const [7]u8) void {
+const Keycodes = [7]u8;
+
+pub fn sendKeyboardReport(usb_dev: type, keycodes: *const Keycodes) void {
     usb_dev.callbacks.usb_start_tx(keyboardEpAddr, keycodes);
 }

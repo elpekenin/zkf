@@ -1,43 +1,48 @@
 //! Create a scanning function given the rows and cols pins.
 
+const Options = struct {
+    diode_direction: DiodeDirection,
+    /// time between setting a pin as output and iterating the inputs connected to it
+    outputDelay: Time,
+};
+
 pub fn matrix(
     comptime Pin: type,
-    rows: []const Pin,
-    cols: []const Pin,
+    comptime rows: []const Pin,
+    comptime cols: []const Pin,
     comptime layout: Layout,
-    comptime diode_direction: DiodeDirection,
-    // wait between setting a pin, and reading the ones connected to it
-    comptime delay: DelayFn,
-) *const fn () Keys.State {
+    comptime options: Options,
+) Keyboard.Portability.ScanKeys {
     if (layout.len != rows.len) {
         @compileError("layout size doesn't match number of rows");
     }
+
     validateLayout(layout);
 
     for (0.., layout) |r, row| {
         if (row.len != cols.len) {
-            const msg = comptimePrint("row {d} of layout doesn't match number of cols", .{r});
+            const msg = std.fmt.comptimePrint("row {d} of layout doesn't match number of cols", .{r});
             @compileError(msg);
         }
     }
 
     // TODO: check if this lines up with QMK's naming
-    const outputs: []const Pin, const inputs: []const Pin = switch (diode_direction) {
+    const outputs: []const Pin, const inputs: []const Pin = switch (options.diode_direction) {
         .row_col => .{ rows, cols },
         .col_row => .{ cols, rows },
     };
 
     return struct {
-        fn scan() Keys.State {
-            var keys_state: Keys.State = .initEmpty();
+        fn scan(keyboard: *const Keyboard) keys.State {
+            var keys_state: keys.State = .initEmpty();
 
             for (0.., outputs) |i, output| {
                 output.put(1);
 
-                delay();
+                wait(keyboard.portability.getTime, options.outputDelay);
 
                 for (0.., inputs) |j, input| {
-                    const maybe_index = switch (diode_direction) {
+                    const maybe_index = switch (options.diode_direction) {
                         .row_col => layout[i][j],
                         .col_row => layout[j][i],
                     };
@@ -71,12 +76,18 @@ fn validateLayout(comptime layout: Layout) void {
         for (row) |maybe_index| {
             if (maybe_index) |index| {
                 if (index >= n_keys) {
-                    const msg = comptimePrint("layout contains index ({d}) bigger than number of keys ({d})", .{ index, n_keys });
+                    const msg = std.fmt.comptimePrint(
+                        "layout contains index ({d}) bigger than number of keys ({d})",
+                        .{ index, n_keys },
+                    );
                     @compileError(msg);
                 }
 
                 if (seen.isSet(index)) {
-                    const msg = comptimePrint("layout contains duplicate index ({d})", .{index});
+                    const msg = std.fmt.comptimePrint(
+                        "layout contains duplicate index ({d})",
+                        .{index},
+                    );
                     @compileError(msg);
                 }
 
@@ -86,17 +97,20 @@ fn validateLayout(comptime layout: Layout) void {
     }
 }
 
-//
-// constants
-//
-const comptimePrint = std.fmt.comptimePrint;
-const DelayFn = *const fn () void;
-const DiodeDirection = types.DiodeDirection;
-const Layout = types.Layout;
+fn wait(getTime: Keyboard.Portability.GetTime, duration: Time) void {
+    if (duration.toMillis() == 0) {
+        return;
+    }
 
-//
-// imports
-//
+    const start = getTime();
+    const deadline = start.add(duration);
+
+    while (getTime().lt(deadline)) {}
+}
+
 const std = @import("std");
-const types = @import("types.zig");
-const Keys = @import("Keys.zig");
+const DiodeDirection = @import("types.zig").DiodeDirection;
+const Keyboard = @import("Keyboard.zig");
+const keys = @import("keys.zig");
+const Layout = @import("types.zig").Layout;
+const Time = @import("time.zig").Time;

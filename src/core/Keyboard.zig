@@ -1,10 +1,32 @@
-hid: hid_.State,
+/// platform-specific logic
+///
+/// to be provided by user, as the "glue" for the lib to interact with hardware
+pub const Portability = struct {
+    pub const GetTime = *const fn () Time;
+    pub const SendHid = *const fn (HidReport) void;
+    pub const ScanKeys = *const fn (*const Keyboard) keys.State;
+
+    /// time since boot
+    getTime: GetTime,
+    sendHid: SendHid,
+    scanKeys: ScanKeys,
+};
+
+/// user configuration of the keyboard (mostly, the keymap)
+const Options = struct {
+    debounce: Time,
+    default_layer: Layers.Id = 0,
+    keymap: Keymap.Raw,
+    portability: Portability,
+};
+
+debouncer: keys.Debouncer,
+hid: HidState,
 keymap: Keymap,
-keys: Keys,
 layers: Layers,
+portability: Portability,
 
-functions: Functions,
-
+/// create a `Keyboard` instance given its configuration
 pub fn new(comptime options: Options) Keyboard {
     const n_layers = comptime options.keymap.len;
     if (n_layers == 0) {
@@ -15,65 +37,61 @@ pub fn new(comptime options: Options) Keyboard {
     }
 
     const n_keys = comptime getNKeys(options.keymap);
-    if (n_keys > Keys.MAX) {
+    if (n_keys > keys.MAX) {
         @compileError("number of keys exceeds current maximum");
     }
 
     validateKeycodes(options.keymap);
 
     return .{
+        .debouncer = .init(options.debounce),
         .hid = .initEmpty(),
         .keymap = .from(options.keymap),
-        .keys = .initEmpty(),
         .layers = .withDefault(options.default_layer),
-        .functions = .{
-            .hid = options.send,
-            .scan = options.scan,
-        },
+        .portability = options.portability,
     };
 }
 
-pub fn keycodeGet(self: *const Keyboard, key: Keys.Id) Keycode {
+pub fn keycodeGet(self: *const Keyboard, key: keys.Id) Keycode {
     var layer = self.layers.highest();
-
-    while (layer > 0) : (layer -= 1) {
-        if (!self.layers.isActive(layer)) {
-            continue;
+    while (true) : (layer -= 1) {
+        if (self.layers.isActive(layer)) {
+            const keycode = self.keymap.get(layer, key);
+            if (keycode != .transparent) {
+                return keycode;
+            }
         }
 
-        const keycode = self.keymap.get(layer, key);
-        if (keycode != .transparent) {
-            return keycode;
+        // can't go further down
+        if (layer == 0) {
+            return .noop;
         }
     }
-
-    return .noop;
 }
 
-pub fn scan(self: *Keyboard) Keys.State {
-    const reading = self.functions.scan();
-    return self.keys.update(reading);
+pub fn scan(self: *Keyboard) keys.State {
+    const now = self.portability.getTime();
+    const reading = self.portability.scanKeys(self);
+    return self.debouncer.update(now, reading);
 }
 
-pub fn processChanges(self: *Keyboard, changes: Keys.State) void {
+pub fn processChanges(self: *Keyboard, changes: keys.State) void {
     var iterator = changes.iterator(.{});
     while (iterator.next()) |raw| {
-        const id: Keys.Id = @intCast(raw);
+        const id: keys.Id = @intCast(raw);
 
         const keycode = self.keycodeGet(id);
-        const pressed = self.keys.isPressed(id);
+        const pressed = self.debouncer.isPressed(id);
 
         self.process(keycode, pressed) catch |e| {
-            std.log.err("Processing {} ({})", .{ keycode, e });
+            std.log.warn("could not process {} ({})", .{ keycode, e });
         };
     }
 }
 
 fn process(self: *Keyboard, keycode: Keycode, pressed: bool) !void {
-    const initial = self.hid.report;
-    defer if (!self.hid.report.eql(initial)) {
-        self.functions.hid(self.hid.report);
-    };
+    // make sure the report gets sent after (potentially) modifying it
+    defer self.portability.sendHid(self.hid.report);
 
     switch (keycode) {
         .noop,
@@ -81,26 +99,26 @@ fn process(self: *Keyboard, keycode: Keycode, pressed: bool) !void {
         => {},
         .hid => |kc| {
             if (pressed) {
-                try self.hid.report.addKeycode(kc);
+                try self.hid.report.addKc(kc);
             } else {
-                try self.hid.report.popKeycode(kc);
+                try self.hid.report.removeKc(kc);
             }
         },
         .with_mods => |kc| {
             if (pressed) {
-                self.hid.report.addModifiers(kc.modifiers);
-                try self.hid.report.addKeycode(kc.hid);
+                self.hid.report.addMods(kc.modifiers);
+                try self.hid.report.addKc(kc.hid);
             } else {
-                self.hid.report.popModifiers(kc.modifiers);
-                try self.hid.report.popKeycode(kc.hid);
+                self.hid.report.removeMods(kc.modifiers);
+                try self.hid.report.removeKc(kc.hid);
             }
         },
         .layer_with_mods => |kc| {
             if (pressed) {
-                self.hid.report.addModifiers(kc.modifiers);
+                self.hid.report.addMods(kc.modifiers);
                 self.layers.enable(kc.layer);
             } else {
-                self.hid.report.popModifiers(kc.modifiers);
+                self.hid.report.removeMods(kc.modifiers);
                 self.layers.disable(kc.layer);
             }
         },
@@ -127,6 +145,9 @@ fn getNKeys(comptime keymap: Keymap.Raw) usize {
     return n_keys;
 }
 
+/// check for erroneous configuration of a keymap
+///
+/// eg: a layer-related keycode that targets an id bigger than the number of layers
 fn validateKeycodes(comptime keymap: Keymap.Raw) void {
     for (keymap) |layer| {
         for (layer) |keycode| {
@@ -151,27 +172,15 @@ fn validateKeycodes(comptime keymap: Keymap.Raw) void {
     }
 }
 
-const Options = struct {
-    keymap: Keymap.Raw,
-    default_layer: Layers.Id = 0,
-    scan: Scan,
-    send: Send,
-};
-
-const Functions = struct {
-    scan: Scan,
-    hid: Send,
-};
-
 const comptimePrint = std.fmt.comptimePrint;
 const Keyboard = @This();
 const Keycode = keycodes.Keycode;
-const Scan = *const fn () Keys.State;
-const Send = *const fn (hid_.Report) void;
 
 const std = @import("std");
-const hid_ = @import("hid.zig");
 const keycodes = @import("keycodes.zig");
+const HidReport = @import("hid.zig").Report;
+const HidState = @import("hid.zig").State;
 const Keymap = @import("Keymap.zig");
-const Keys = @import("Keys.zig");
+const keys = @import("keys.zig");
 const Layers = @import("Layers.zig");
+const Time = @import("time.zig").Time;

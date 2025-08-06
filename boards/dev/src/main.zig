@@ -1,10 +1,3 @@
-const microzig = @import("microzig");
-const usb_if = @import("usb_if.zig");
-const rp2xxx = microzig.hal;
-const uart = rp2xxx.uart.instance.num(0);
-const time = rp2xxx.time;
-const usb_dev = rp2xxx.usb.Usb(.{});
-
 const pins_config: rp2xxx.pins.GlobalConfiguration = .{
     .GPIO0 = .{ .name = "C4", .direction = .in },
     .GPIO1 = .{ .name = "C3", .direction = .in },
@@ -22,11 +15,12 @@ const pins_config: rp2xxx.pins.GlobalConfiguration = .{
 };
 const pins = pins_config.pins();
 
-fn ledHandler(pressed: bool) void {
-    const value = @intFromBool(pressed);
-    pins.LED.put(value);
-}
-const LED: zkf.Keycode = .Custom(ledHandler);
+const LED: zkf.Keycode = .Custom(struct {
+    fn handler(pressed: bool) void {
+        const value = @intFromBool(pressed);
+        pins.LED.put(value);
+    }
+}.handler);
 
 const Pin = @TypeOf(pins.R1);
 const rows: []const Pin = &.{ pins.R1, pins.R2, pins.R3, pins.R4 };
@@ -41,13 +35,19 @@ const layout: zkf.Layout = &.{
 };
 // zig fmt: on
 
+fn getTime() zkf.Time {
+    return .fromMillis(
+        time.get_time_since_boot().to_us() / 1000,
+    );
+}
+
 fn delay() void {
     time.sleep_us(50);
 }
 
 fn sendHid(report: zkf.hid.Report) void {
     const array: [7]u8 = @bitCast(report);
-    usb_if.send_keyboard_report(usb_dev, &array);
+    usb_if.sendKeyboardReport(usb_dev, &array);
 }
 
 pub fn main() !void {
@@ -60,6 +60,7 @@ pub fn main() !void {
     usb_if.init(usb_dev);
 
     var keyboard = zkf.Keyboard.new(.{
+        .debounce = .fromMillis(5),
         .keymap = &.{
             // zig fmt: off
             &.{
@@ -70,60 +71,36 @@ pub fn main() !void {
             },
             // zig fmt: on
         },
-        .scan = zkf.scan.matrix(Pin, rows, cols, layout, .row_col, delay),
-        .send = sendHid,
+        .portability = .{
+            .getTime = getTime,
+            .sendHid = sendHid,
+            .scanKeys = zkf.scan.matrix(Pin, rows, cols, layout, .{
+                .diode_direction = .row_col,
+                .outputDelay = .fromMillis(2),
+            }),
+        },
     });
 
     logger.info("started", .{});
-    pins.LED.toggle();
 
     while (true) {
         // process pending USB housekeeping
         try usb_dev.task(false);
 
         const changes = keyboard.scan();
-        if (changes.count() == 0) {
-            continue;
-        }
-
-        var iterator = changes.iterator(.{});
-
-        logger.debug("changes", .{});
-        while (iterator.next()) |index| {
-            logger.debug("  {}", .{index});
-        }
-
         keyboard.processChanges(changes);
     }
 }
 
-fn logFn(
-    comptime level: std.log.Level,
-    comptime scope: @TypeOf(.EnumLiteral),
-    comptime format: []const u8,
-    args: anytype,
-) void {
-    const prefix = comptime comptimePrint("{s} ({s}): ", .{
-        level.asText(),
-        switch (scope) {
-            .default => "<unknown>",
-            else => @tagName(scope),
-        },
-    });
-
-    const writer = uart.writer();
-    writer.print(prefix ++ format ++ "\r\n", args) catch {};
-}
-
-pub const microzig_options: microzig.Options = .{
-    .log_level = .debug,
-    .logFn = logFn,
-};
-
-const comptimePrint = std.fmt.comptimePrint;
 const logger = std.log.scoped(.dev_board);
+const rp2xxx = microzig.hal;
+const time = rp2xxx.time;
+const uart = rp2xxx.uart.instance.num(0);
+const us = zkf.languages.english_us;
+const usb_dev = rp2xxx.usb.Usb(.{});
 
 const std = @import("std");
-
+const microzig = @import("microzig");
+const usb_if = @import("usb_if.zig");
 const zkf = @import("zkf");
-const us = zkf.languages.english_us;
+pub const microzig_options = @import("options.zig").microzig_options;

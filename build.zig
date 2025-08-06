@@ -8,9 +8,15 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // testing
+    const serpent = b.dependency("serpent", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("serpent");
+
     const test_suite = b.addTest(.{
         .root_module = zkf,
-        .test_runner = .{ .path = b.path("tools/test_runner.zig"), .mode = .simple },
+        .test_runner = .{ .path = serpent.root_source_file.?, .mode = .simple },
     });
     const run_tests = b.addRunArtifact(test_suite);
 

@@ -8,20 +8,20 @@ pub const Modifiers = packed struct(u8) {
     right_alt: bool,
     right_gui: bool,
 
-    pub fn from(value: u8) Modifiers {
-        return @bitCast(value);
+    pub fn add(self: Modifiers, other: Modifiers) Modifiers {
+        return from(self.mask() | other.mask());
     }
 
-    pub fn mask(self: Modifiers) u8 {
-        return @bitCast(self);
+    pub fn setAdd(self: *Modifiers, other: Modifiers) void {
+        self.* = self.add(other);
     }
 
-    pub fn add(lhs: Modifiers, rhs: Modifiers) Modifiers {
-        return .from(lhs.mask() | rhs.mask());
+    pub fn remove(self: Modifiers, other: Modifiers) Modifiers {
+        return from(self.mask() & ~other.mask());
     }
 
-    pub fn pop(lhs: Modifiers, rhs: Modifiers) Modifiers {
-        return .from(lhs.mask() & ~rhs.mask());
+    pub fn setRemove(self: *Modifiers, other: Modifiers) void {
+        self.* = self.remove(other);
     }
 
     pub const empty: Modifiers = @bitCast(@as(u8, 0));
@@ -73,6 +73,14 @@ pub const Modifiers = packed struct(u8) {
         value.right_gui = true;
         break :blk value;
     };
+
+    fn from(value: u8) Modifiers {
+        return @bitCast(value);
+    }
+
+    fn mask(self: Modifiers) u8 {
+        return @bitCast(self);
+    }
 };
 
 pub const Report = extern struct {
@@ -94,15 +102,15 @@ pub const Report = extern struct {
         );
     }
 
-    pub fn addModifiers(self: *Report, modifiers: Modifiers) void {
-        self.modifiers = self.modifiers.add(modifiers);
+    pub fn addMods(self: *Report, modifiers: Modifiers) void {
+        self.modifiers.setAdd(modifiers);
     }
 
-    pub fn popModifiers(self: *Report, modifiers: Modifiers) void {
-        self.modifiers = self.modifiers.pop(modifiers);
+    pub fn removeMods(self: *Report, modifiers: Modifiers) void {
+        self.modifiers.setRemove(modifiers);
     }
 
-    pub fn addKeycode(self: *Report, keycode: Keycode) !void {
+    pub fn addKc(self: *Report, keycode: Keycode) !void {
         for (&self.keycodes) |*kc| {
             // already in place
             if (kc.* == keycode) {
@@ -119,7 +127,7 @@ pub const Report = extern struct {
         return error.OutOfMemory;
     }
 
-    pub fn popKeycode(self: *Report, keycode: Keycode) !void {
+    pub fn removeKc(self: *Report, keycode: Keycode) !void {
         for (&self.keycodes) |*kc| {
             if (kc.* == keycode) {
                 kc.* = 0;
@@ -173,7 +181,7 @@ test "Modifiers.add" {
 
 test "Modifiers.pop" {
     const expected: Modifiers = .lc;
-    const actual = Modifiers.ls.add(.lc).pop(.ls);
+    const actual = Modifiers.ls.add(.lc).remove(.ls);
     try t.expectEqual(expected, actual);
 }
 
@@ -181,7 +189,7 @@ test "Report.addKeycode" {
     var report: Report = .initEmpty();
 
     const keycode: Keycode = 123;
-    try report.addKeycode(keycode);
+    try report.addKc(keycode);
 
     for (report.keycodes) |actual| {
         if (actual == keycode) {
@@ -196,16 +204,16 @@ test "Report.addKeycode no error on duplicate" {
     var report: Report = .initEmpty();
 
     const keycode: Keycode = 123;
-    try report.addKeycode(keycode);
-    report.addKeycode(keycode) catch return error.ShouldNotError;
+    try report.addKc(keycode);
+    report.addKc(keycode) catch return error.ShouldNotError;
 }
 
 test "Report.addKeycode error if full" {
     var report: Report = .initEmpty();
 
     for (0..Report.N_KEYCODES) |i| {
-        try report.addKeycode(@intCast(i + 1));
+        try report.addKc(@intCast(i + 1));
     }
 
-    try t.expectError(error.OutOfMemory, report.addKeycode(123));
+    try t.expectError(error.OutOfMemory, report.addKc(123));
 }
