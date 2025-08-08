@@ -3,7 +3,7 @@
 const Options = struct {
     diode_direction: DiodeDirection,
     /// time between setting a pin as output and iterating the inputs connected to it
-    outputDelay: Time,
+    output_delay: Time,
 };
 
 pub fn matrix(
@@ -39,7 +39,7 @@ pub fn matrix(
             for (0.., outputs) |i, output| {
                 output.put(1);
 
-                wait(keyboard.portability.getTime, options.outputDelay);
+                wait(keyboard.portability.getTime, options.output_delay);
 
                 for (0.., inputs) |j, input| {
                     const maybe_index = switch (options.diode_direction) {

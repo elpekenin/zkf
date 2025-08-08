@@ -41,7 +41,7 @@ pub fn new(comptime options: Options) Keyboard {
         @compileError("number of keys exceeds current maximum");
     }
 
-    validateKeycodes(options.keymap);
+    comptime validateKeycodes(options.keymap);
 
     return .{
         .debouncer = .init(options.debounce),
@@ -148,7 +148,7 @@ fn getNKeys(comptime keymap: Keymap.Raw) usize {
 /// check for erroneous configuration of a keymap
 ///
 /// eg: a layer-related keycode that targets an id bigger than the number of layers
-fn validateKeycodes(comptime keymap: Keymap.Raw) void {
+fn validateKeycodes(keymap: Keymap.Raw) void {
     for (keymap) |layer| {
         for (layer) |keycode| {
             switch (keycode) {
@@ -159,9 +159,8 @@ fn validateKeycodes(comptime keymap: Keymap.Raw) void {
                 => {},
 
                 .layer_with_mods => |kc| {
-                    const index = kc.layer;
-                    if (index >= Layers.MAX) {
-                        const msg = comptimePrint("keycode targets layer index {d}, which is out of range", .{index});
+                    if (kc.layer >= keymap.len) {
+                        const msg = comptimePrint("keycode targets layer index {d}, which is out of range ({d} layers)", .{ kc.layer, keymap.len });
                         @compileError(msg);
                     }
                 },

@@ -76,7 +76,7 @@ pub fn main() !void {
             .sendHid = sendHid,
             .scanKeys = zkf.scan.matrix(Pin, rows, cols, layout, .{
                 .diode_direction = .row_col,
-                .outputDelay = .fromMillis(2),
+                .output_delay = .fromMillis(2),
             }),
         },
     });

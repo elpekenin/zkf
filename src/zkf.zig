@@ -1,15 +1,15 @@
-pub const hid = @import("core/hid.zig");
+pub const hid = @import("hid.zig");
 pub const languages = keycodes.languages;
-pub const scan = @import("core/scan.zig");
+pub const scan = @import("scan.zig");
 
-pub const Keyboard = @import("core/Keyboard.zig");
+pub const Keyboard = @import("Keyboard.zig");
 pub const Keycode = keycodes.Keycode;
 pub const Keymap = types.Keymap;
-pub const keys = @import("core/keys.zig");
+pub const keys = @import("keys.zig");
 pub const Layout = types.Layout;
-pub const Time = @import("core/time.zig").Time;
+pub const Time = @import("time.zig").Time;
 
-const keycodes = @import("core/keycodes.zig");
-const types = @import("core/types.zig");
+const keycodes = @import("keycodes.zig");
+const types = @import("types.zig");
 
 // TODO: opt-in tracing and/or debugging

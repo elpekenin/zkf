@@ -22,13 +22,7 @@ pub const Keycode = union(enum) {
             .layer_with_mods => |kc| .{
                 .layer_with_mods = kc.addMods(mods),
             },
-            else => {
-                if (@inComptime()) {
-                    @compileError("can't add modifiers to this keycode");
-                }
-
-                @panic("TODO: Decide how to handle this");
-            },
+            else => errors.fatal("can't add modifiers to this keycode"),
         };
     }
 
@@ -132,5 +126,6 @@ const User = union(enum) {
     const AdvancedFn = *const fn (*anyopaque, bool) void;
 };
 
+const errors = @import("errors.zig");
 const hid = @import("hid.zig");
 const Layers = @import("Layers.zig");
