@@ -160,7 +160,7 @@ fn validateKeycodes(keymap: Keymap.Raw) void {
 
                 .layer_with_mods => |kc| {
                     if (kc.layer >= keymap.len) {
-                        const msg = comptimePrint("keycode targets layer index {d}, which is out of range ({d} layers)", .{ kc.layer, keymap.len });
+                        const msg = comptimePrint("keycode targets layer index {d}, which is out of range (there are {d} layers)", .{ kc.layer, keymap.len });
                         @compileError(msg);
                     }
                 },

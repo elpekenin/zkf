@@ -1,4 +1,4 @@
-fn logFn(
+pub fn function(
     comptime level: std.log.Level,
     comptime scope: @TypeOf(.EnumLiteral),
     comptime format: []const u8,
@@ -15,11 +15,6 @@ fn logFn(
     const writer = uart.writer();
     writer.print(prefix ++ format ++ "\r\n", args) catch {};
 }
-
-pub const microzig_options: microzig.Options = .{
-    .log_level = .debug,
-    .logFn = logFn,
-};
 
 const comptimePrint = std.fmt.comptimePrint;
 
