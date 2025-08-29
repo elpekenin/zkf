@@ -14,15 +14,20 @@ pub fn matrix(
     comptime options: Options,
 ) Keyboard.Portability.ScanKeys {
     if (layout.len != rows.len) {
-        @compileError("layout size doesn't match number of rows");
+        errors.fatal(
+            "layout size ({}) doesn't match number of rows ({})",
+            .{
+                layout.len,
+                rows.len,
+            },
+        );
     }
 
     validateLayout(layout);
 
     for (0.., layout) |r, row| {
         if (row.len != cols.len) {
-            const msg = std.fmt.comptimePrint("row {d} of layout doesn't match number of cols", .{r});
-            @compileError(msg);
+            errors.fatal("row {d} of layout doesn't match number of cols", .{r});
         }
     }
 
@@ -76,19 +81,22 @@ fn validateLayout(comptime layout: Layout) void {
         for (row) |maybe_index| {
             if (maybe_index) |index| {
                 if (index >= n_keys) {
-                    const msg = std.fmt.comptimePrint(
+                    errors.fatal(
                         "layout contains index ({d}) bigger than number of keys ({d})",
-                        .{ index, n_keys },
+                        .{
+                            index,
+                            n_keys,
+                        },
                     );
-                    @compileError(msg);
                 }
 
                 if (seen.isSet(index)) {
-                    const msg = std.fmt.comptimePrint(
+                    errors.fatal(
                         "layout contains duplicate index ({d})",
-                        .{index},
+                        .{
+                            index,
+                        },
                     );
-                    @compileError(msg);
                 }
 
                 seen.set(index);
@@ -109,6 +117,7 @@ fn wait(getTime: Keyboard.Portability.GetTime, duration: Time) void {
 }
 
 const std = @import("std");
+const errors = @import("errors.zig");
 const DiodeDirection = @import("types.zig").DiodeDirection;
 const Keyboard = @import("Keyboard.zig");
 const keys = @import("keys.zig");

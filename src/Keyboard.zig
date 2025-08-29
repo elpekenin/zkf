@@ -30,15 +30,15 @@ portability: Portability,
 pub fn new(comptime options: Options) Keyboard {
     const n_layers = comptime options.keymap.len;
     if (n_layers == 0) {
-        @compileError("empty keymap");
+        errors.fatal("empty keymap", .{});
     }
     if (n_layers > Layers.MAX) {
-        @compileError("number of layers exceeds current maximum");
+        errors.fatal("number of layers ({}) exceeds current maximum ({})", .{ n_layers, Layers.MAX });
     }
 
     const n_keys = comptime getNKeys(options.keymap);
     if (n_keys > keys.MAX) {
-        @compileError("number of keys exceeds current maximum");
+        errors.fatal("number of keys ({}) exceeds current maximum ({})", .{ n_keys, keys.MAX });
     }
 
     comptime validateKeycodes(options.keymap);
@@ -113,15 +113,7 @@ fn process(self: *Keyboard, keycode: Keycode, pressed: bool) !void {
                 try self.hid.report.removeKc(kc.hid);
             }
         },
-        .layer_with_mods => |kc| {
-            if (pressed) {
-                self.hid.report.addMods(kc.modifiers);
-                self.layers.enable(kc.layer);
-            } else {
-                self.hid.report.removeMods(kc.modifiers);
-                self.layers.disable(kc.layer);
-            }
-        },
+        .temporary_layer => |kc| kc.process(self, pressed),
         .user => |kc| {
             switch (kc) {
                 .basic => |function| function(pressed),
@@ -137,8 +129,14 @@ fn getNKeys(comptime keymap: Keymap.Raw) usize {
     for (1..keymap.len) |i| {
         const len = keymap[i].len;
         if (len != n_keys) {
-            const msg = comptimePrint("layer {d} has wrong size. expected {d}, got {d}", .{ i, n_keys, len });
-            @compileError(msg);
+            errors.fatal(
+                "layer {d} has wrong size. expected {d}, got {d}",
+                .{
+                    i,
+                    n_keys,
+                    len,
+                },
+            );
         }
     }
 
@@ -148,9 +146,9 @@ fn getNKeys(comptime keymap: Keymap.Raw) usize {
 /// check for erroneous configuration of a keymap
 ///
 /// eg: a layer-related keycode that targets an id bigger than the number of layers
-fn validateKeycodes(keymap: Keymap.Raw) void {
-    for (keymap) |layer| {
-        for (layer) |keycode| {
+fn validateKeycodes(comptime keymap: Keymap.Raw) void {
+    for (keymap, 0..) |layer, layer_index| {
+        for (layer, 0..) |keycode, key_index| {
             switch (keycode) {
                 .noop,
                 .transparent,
@@ -158,10 +156,38 @@ fn validateKeycodes(keymap: Keymap.Raw) void {
                 .with_mods,
                 => {},
 
-                .layer_with_mods => |kc| {
+                .temporary_layer => |kc| {
                     if (kc.layer >= keymap.len) {
-                        const msg = comptimePrint("keycode targets layer index {d}, which is out of range (there are {d} layers)", .{ kc.layer, keymap.len });
-                        @compileError(msg);
+                        errors.fatal(
+                            "key {d} in layer {d} targets layer {d}, which is out of range (there are {d} layers)",
+                            .{
+                                key_index,
+                                layer_index,
+                                kc.layer,
+                                keymap.len,
+                            },
+                        );
+                    }
+
+                    switch (keymap[kc.layer][key_index]) {
+                        .transparent => {},
+                        .temporary_layer => |target| if (target.layer != kc.layer) errors.fatal(
+                            "key {d} in layer {d} is MO({d}), but MO({d}) in target layer",
+                            .{
+                                key_index,
+                                layer_index,
+                                kc.layer,
+                                target.layer,
+                            },
+                        ),
+                        else => errors.fatal(
+                            "key {d} in layer {d} is MO({d}), but not the same keycode -or transparent- on target layer",
+                            .{
+                                key_index,
+                                layer_index,
+                                kc.layer,
+                            },
+                        ),
                     }
                 },
 
@@ -171,11 +197,11 @@ fn validateKeycodes(keymap: Keymap.Raw) void {
     }
 }
 
-const comptimePrint = std.fmt.comptimePrint;
 const Keyboard = @This();
 const Keycode = keycodes.Keycode;
 
 const std = @import("std");
+const errors = @import("errors.zig");
 const keycodes = @import("keycodes.zig");
 const HidReport = @import("hid.zig").Report;
 const HidState = @import("hid.zig").State;

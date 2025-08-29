@@ -5,7 +5,7 @@ pub const Keycode = union(enum) {
     transparent,
     hid: hid.Keycode,
     with_mods: WithModifiers,
-    layer_with_mods: LayerWithModifiers,
+    temporary_layer: TemporaryLayer,
     user: User,
 
     fn addMods(keycode: Keycode, mods: hid.Modifiers) Keycode {
@@ -19,10 +19,7 @@ pub const Keycode = union(enum) {
             .with_mods => |kc| .{
                 .with_mods = kc.addMods(mods),
             },
-            .layer_with_mods => |kc| .{
-                .layer_with_mods = kc.addMods(mods),
-            },
-            else => errors.fatal("can't add modifiers to this keycode"),
+            else => errors.fatal("can't add modifiers to this keycode", .{}),
         };
     }
 
@@ -63,12 +60,11 @@ pub const Keycode = union(enum) {
         return keycode.addMods(.rg);
     }
 
-    // layer mod
-    pub fn LM(layer: usize, modifiers: hid.Modifiers) Keycode {
+    // temporary layer
+    pub fn MO(layer: usize) Keycode {
         return .{
-            .layer_with_mods = .{
+            .temporary_layer = .{
                 .layer = layer,
-                .modifiers = modifiers,
             },
         };
     }
@@ -104,14 +100,15 @@ const WithModifiers = struct {
     }
 };
 
-const LayerWithModifiers = struct {
+const TemporaryLayer = struct {
     layer: Layers.Id,
-    modifiers: hid.Modifiers,
 
-    pub fn addMods(lhs: LayerWithModifiers, modifiers: hid.Modifiers) LayerWithModifiers {
-        var value = lhs;
-        value.modifiers = value.modifiers.add(modifiers);
-        return value;
+    pub fn process(self: TemporaryLayer, keyboard: *Keyboard, pressed: bool) void {
+        if (pressed) {
+            keyboard.layers.enable(self.layer);
+        } else {
+            keyboard.layers.disable(self.layer);
+        }
     }
 };
 
@@ -128,4 +125,5 @@ const User = union(enum) {
 
 const errors = @import("errors.zig");
 const hid = @import("hid.zig");
+const Keyboard = @import("Keyboard.zig");
 const Layers = @import("Layers.zig");

@@ -74,8 +74,14 @@ pub fn main() !void {
                 us.A, us.B, us.C, us.D,
                 us.E, us.F, us.G, us.H,
                 us.I, us.J, us.K, us.L,
-                us.M, us.N, us.O, LED,
+                us.M, us.N, .MO(1), LED,
             },
+            &.{
+                us.A, us.B, us.C, us.D,
+                us.E, us.F, us.G, us.H,
+                us.I, us.J, us.K, us.L,
+                us.M, us.N, .___, LED,
+            }
             // zig fmt: on
         },
         .portability = .{

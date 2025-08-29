@@ -37,7 +37,7 @@ fn flatten(args: anytype) [len(args)]u8 {
 pub const report_descriptor = flatten(.{
     hid.hid_usage_page(1, hid.UsageTable.desktop),
     hid.hid_usage(1, hid.DesktopUsage.keyboard),
-    hid.hid_collection(hid.CollectionItem.Application),
+    hid.hid_collection(.Application),
     hid.hid_usage_page(1, hid.UsageTable.keyboard),
     // FIXME: next 2 lines' values look wrong
     hid.hid_usage_min(1, .{0xe2}), // left alt
