@@ -1,33 +1,16 @@
-const std = @import("std");
 const microzig = @import("microzig");
-const options = @import("options");
 
-const rp2xxx = microzig.hal;
-const time = rp2xxx.time;
-const uart = rp2xxx.uart.instance.num(0);
+const uart = microzig.hal.uart.instance.num(0);
 
 const zkf = @import("zkf");
 const us = zkf.languages.english_us;
 
-const usb = @import("usb.zig");
-
-fn logFn(
-    comptime level: std.log.Level,
-    comptime scope: @Type(.enum_literal),
-    comptime format: []const u8,
-    args: anytype,
-) void {
-    if (options.uart_logging) {
-        rp2xxx.uart.log(level, scope, format, args);
-    }
-}
-
 pub const microzig_options: microzig.Options = .{
     .log_level = .info,
-    .logFn = logFn,
+    .logFn = microzig.hal.uart.log,
 };
 
-const pin_config: rp2xxx.pins.GlobalConfiguration = .{
+const pin_config: microzig.hal.pins.GlobalConfiguration = .{
     .GPIO0 = .{ .name = "c4", .direction = .in },
     .GPIO1 = .{ .name = "c3", .direction = .in },
     .GPIO2 = .{ .name = "c2", .direction = .in },
@@ -44,16 +27,10 @@ const pin_config: rp2xxx.pins.GlobalConfiguration = .{
 };
 
 const pins = pin_config.pins();
-const Pin = @TypeOf(pins.r1);
-const rows: []const Pin = &.{ pins.r1, pins.r2, pins.r3, pins.r4 };
-const cols: []const Pin = &.{ pins.c1, pins.c2, pins.c3, pins.c4 };
-
-var usb_device: usb.Device = undefined;
-var usb_controller: usb.ControllerType = .init;
 
 fn ledHandler(ctx: ?*anyopaque, keyboard: *zkf.Keyboard, event: *const zkf.KeyEvent) void {
     _ = keyboard;
-    const pin: *const Pin = @ptrCast(ctx orelse @panic("unreachable nullptr"));
+    const pin: *const microzig.hal.gpio.Pin = @ptrCast(ctx orelse @panic("unreachable nullptr"));
 
     if (event.pressed) {
         pin.toggle();
@@ -71,13 +48,11 @@ pub fn main() !void {
     // configure pins
     _ = pin_config.apply();
 
-    if (options.uart_logging) {
-        uart.apply(.{
-            .baud_rate = 9_600,
-            .clock_config = rp2xxx.clock_config,
-        });
-        rp2xxx.uart.init_logger(uart);
-    }
+    uart.apply(.{
+        .baud_rate = 9_600,
+        .clock_config = microzig.hal.clock_config,
+    });
+    microzig.hal.uart.init_logger(uart);
 
     var keyboard: zkf.Keyboard = .init(.{
         .keymap = &.{
@@ -97,12 +72,11 @@ pub fn main() !void {
             // zig fmt: on
         },
         .portability = .{
-            .getTime = getTime,
-            .sendHid = sendHid,
-            .scanKeys = zkf.scan.matrix(
-                Pin,
-                rows,
-                cols,
+            .getTime = zkf.microzig.getTime,
+            .sendHid = zkf.microzig.usb.sendHid,
+            .scanKeys = zkf.microzig.scan.matrix(
+                &.{ pins.r1, pins.r2, pins.r3, pins.r4 },
+                &.{ pins.c1, pins.c2, pins.c3, pins.c4 },
                 &.{
                     &.{ 0, 1, 2, 3 },
                     &.{ 4, 5, 6, 7 },
@@ -117,9 +91,9 @@ pub fn main() !void {
         },
     });
 
-    usb_device = .init();
+    zkf.microzig.usb.init();
     while (true) {
-        usb_device.poll(&usb_controller);
+        zkf.microzig.usb.poll();
 
         const changes = keyboard.scan();
         if (changes.findFirstSet() == null) {
@@ -135,17 +109,5 @@ pub fn main() !void {
 
             keyboard.processKeycode(keycode, pressed);
         }
-    }
-}
-
-fn getTime() zkf.Time {
-    return .us(time.get_time_since_boot().to_us());
-}
-
-fn sendHid(report: *const zkf.hid.KbToHost) void {
-    if (usb_controller.drivers()) |drivers| {
-        _ = drivers.keyboard.send_report(report);
-    } else {
-        std.log.err("no drivers found", .{});
     }
 }

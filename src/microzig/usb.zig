@@ -1,17 +1,10 @@
-// TODO: move this abstraction into `zkf.microzig` (or similar name) as an optional feature
-//       current `scan.zig` should also be moved there
-
 const microzig = @import("microzig");
-
 const zkf = @import("zkf");
-const options = @import("options");
 
-const rp2xxx = microzig.hal;
 const usb = microzig.core.usb;
-pub const Device = rp2xxx.usb.Polled(.{});
+const Device = microzig.hal.usb.Polled(.{});
 
-// HID Interrupt Driver for Standard Boot Keyboard
-pub const Keyboard = usb.drivers.hid.InterruptDriver(.{
+const Keyboard = usb.drivers.hid.InterruptDriver(.{
     .subclass = .Boot,
     .protocol = .Boot,
     .report_descriptor = &.{
@@ -56,16 +49,16 @@ pub const Keyboard = usb.drivers.hid.InterruptDriver(.{
     .OutReport = zkf.hid.HostToKb,
 });
 
-pub const ControllerType = usb.DeviceController(.{
+const Controller = usb.DeviceController(.{
     .bcd_usb = .v2_00,
     .device_triple = .unspecified,
     .vendor = .{
-        .id = options.vendor_id,
-        .str = options.vendor,
+        .id = zkf.options.vendor_id,
+        .str = zkf.options.vendor,
     },
     .product = .{
-        .id = options.product_id,
-        .str = options.product,
+        .id = zkf.options.product_id,
+        .str = zkf.options.product,
     },
     .bcd_device = .v1_00,
     .serial = "00000001",
@@ -75,10 +68,25 @@ pub const ControllerType = usb.DeviceController(.{
         .max_current_ma = 500,
         .Drivers = struct {
             keyboard: Keyboard,
-            reset: rp2xxx.usb.ResetDriver(null, 0),
         },
     }},
 }, .{.{
     .keyboard = .{ .itf_string = "Keyboard", .poll_interval = 1 },
-    .reset = "",
 }});
+
+pub var controller: Controller = .init;
+pub var device: Device = undefined;
+
+pub fn init() void {
+    device = .init();
+}
+
+pub fn poll() void {
+    device.poll(&controller);
+}
+
+pub fn sendHid(report: *const zkf.hid.KbToHost) void {
+    if (controller.drivers()) |drivers| {
+        _ = drivers.keyboard.send_report(report);
+    }
+}

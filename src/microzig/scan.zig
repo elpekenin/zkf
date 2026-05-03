@@ -1,4 +1,5 @@
 const std = @import("std");
+const Pin = @import("microzig").hal.gpio.Pin;
 const zkf = @import("zkf");
 
 const Layout = []const []const ?usize;
@@ -14,7 +15,6 @@ const Options = struct {
 };
 
 pub fn matrix(
-    comptime Pin: type,
     comptime rows: []const Pin,
     comptime cols: []const Pin,
     comptime layout: Layout,
