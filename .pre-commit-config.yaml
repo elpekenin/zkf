@@ -13,6 +13,11 @@ repos:
       - id: trailing-whitespace
   - repo: local
     hooks:
+      - id: imports
+        name: imports
+        language: system
+        entry: zigimports
+        files: \.zig$
       - id: format
         name: format
         description: format
@@ -25,12 +30,6 @@ repos:
         language: system
         entry: zlint --verbose */*
         files: \.zig$
-      - id: test
-        name: test
-        description: run unit tests
-        language: system
-        entry: zig build test
-        pass_filenames: false
       - id: build
         name: build
         description: build sample board

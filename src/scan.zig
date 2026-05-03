@@ -1,9 +1,16 @@
-//! Create a scanning function given the rows and cols pins.
+const std = @import("std");
+const zkf = @import("zkf");
+
+const Layout = []const []const ?usize;
+
+const DiodeDirection = enum {
+    row_col,
+    col_row,
+};
 
 const Options = struct {
     diode_direction: DiodeDirection,
-    /// time between setting a pin as output and iterating the inputs connected to it
-    output_delay: Time,
+    output_delay: zkf.Time,
 };
 
 pub fn matrix(
@@ -12,39 +19,41 @@ pub fn matrix(
     comptime cols: []const Pin,
     comptime layout: Layout,
     comptime options: Options,
-) Keyboard.Portability.ScanKeys {
-    if (layout.len != rows.len) {
-        errors.fatal(
-            "layout size ({}) doesn't match number of rows ({})",
-            .{
-                layout.len,
-                rows.len,
-            },
-        );
-    }
+) zkf.Portability.ScanKeys {
+    // validation
+    comptime {
+        if (layout.len != rows.len) {
+            std.debug.panic(
+                "layout size ({}) doesn't match number of rows ({})",
+                .{
+                    layout.len,
+                    rows.len,
+                },
+            );
+        }
 
-    validateLayout(layout);
+        validateLayout(layout);
 
-    for (0.., layout) |r, row| {
-        if (row.len != cols.len) {
-            errors.fatal("row {d} of layout doesn't match number of cols", .{r});
+        for (layout, 0..) |row, row_index| {
+            if (row.len != cols.len) {
+                std.debug.panic("row {} of layout doesn't match number of cols", .{row_index});
+            }
         }
     }
 
-    // TODO: check if this lines up with QMK's naming
     const outputs: []const Pin, const inputs: []const Pin = switch (options.diode_direction) {
         .row_col => .{ rows, cols },
         .col_row => .{ cols, rows },
     };
 
     return struct {
-        fn scan(keyboard: *const Keyboard) keys.State {
-            var keys_state: keys.State = .initEmpty();
+        fn scan(keyboard: *const zkf.Keyboard) zkf.keys.State {
+            var keys_state: zkf.keys.State = .initEmpty();
 
             for (0.., outputs) |i, output| {
                 output.put(1);
 
-                wait(keyboard.portability.getTime, options.output_delay);
+                keyboard.sleep(options.output_delay);
 
                 for (0.., inputs) |j, input| {
                     const maybe_index = switch (options.diode_direction) {
@@ -67,59 +76,35 @@ pub fn matrix(
 }
 
 fn validateLayout(comptime layout: Layout) void {
-    var n_keys: usize = 0;
-    for (layout) |row| {
-        for (row) |maybe_index| {
-            if (maybe_index != null) {
-                n_keys += 1;
+    comptime {
+        var n_keys: usize = 0;
+        for (layout) |row| {
+            for (row) |maybe_index| {
+                if (maybe_index != null) {
+                    n_keys += 1;
+                }
             }
         }
-    }
 
-    var seen: std.StaticBitSet(n_keys) = .initEmpty();
-    for (layout) |row| {
-        for (row) |maybe_index| {
-            if (maybe_index) |index| {
-                if (index >= n_keys) {
-                    errors.fatal(
-                        "layout contains index ({d}) bigger than number of keys ({d})",
-                        .{
-                            index,
-                            n_keys,
-                        },
-                    );
+        if (n_keys > zkf.keys.max) {
+            @compileError("too many keys");
+        }
+
+        var seen: std.StaticBitSet(n_keys) = .initEmpty();
+        for (layout) |row| {
+            for (row) |maybe_index| {
+                if (maybe_index) |index| {
+                    if (index >= n_keys) {
+                        std.debug.panic("layout index ({}) out of bounds (0-{})", .{ index, n_keys - 1 });
+                    }
+
+                    if (seen.isSet(index)) {
+                        std.debug.panic("layout index ({}) appears twice in layout", .{index});
+                    }
+
+                    seen.set(index);
                 }
-
-                if (seen.isSet(index)) {
-                    errors.fatal(
-                        "layout contains duplicate index ({d})",
-                        .{
-                            index,
-                        },
-                    );
-                }
-
-                seen.set(index);
             }
         }
     }
 }
-
-fn wait(getTime: Keyboard.Portability.GetTime, duration: Time) void {
-    if (duration.toMillis() == 0) {
-        return;
-    }
-
-    const start = getTime();
-    const deadline = start.add(duration);
-
-    while (getTime().lt(deadline)) {}
-}
-
-const std = @import("std");
-const errors = @import("errors.zig");
-const DiodeDirection = @import("types.zig").DiodeDirection;
-const Keyboard = @import("Keyboard.zig");
-const keys = @import("keys.zig");
-const Layout = @import("types.zig").Layout;
-const Time = @import("time.zig").Time;

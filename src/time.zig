@@ -1,54 +1,45 @@
-const UnderlyingInt = u64;
+const Int = u64;
 
-pub const Time = union(enum) {
-    ms: UnderlyingInt,
-    s: UnderlyingInt,
+pub const Time = enum(Int) {
+    _, // value in us
 
-    pub fn fromMillis(n: UnderlyingInt) Time {
-        return .{
-            .ms = n,
-        };
+    pub fn us(n: Int) Time {
+        return @enumFromInt(n);
     }
 
-    pub fn fromSeconds(n: UnderlyingInt) Time {
-        return .{
-            .s = n,
-        };
+    pub fn ms(n: Int) Time {
+        return .us(n * 1000);
     }
 
-    pub fn toMillis(self: Time) UnderlyingInt {
-        return switch (self) {
-            .s => |s| s * S_TO_MS,
-            .ms => |ms| ms,
-        };
+    pub fn s(n: Int) Time {
+        return .ms(n * 1000);
     }
 
-    pub fn toSeconds(self: Time) UnderlyingInt {
-        return switch (self) {
-            .s => |s| s,
-            .ms => |ms| ms / S_TO_MS,
-        };
+    pub fn toUs(self: Time) Int {
+        return @intFromEnum(self);
     }
 
-    pub fn add(self: Time, rhs: Time) Time {
-        return .fromMillis(
-            self.toMillis() + rhs.toMillis(),
-        );
+    pub fn toMs(self: Time) Int {
+        return self.toUs() * 1000;
     }
 
-    pub fn subtract(self: Time, rhs: Time) Time {
-        return .fromMillis(
-            self.toMillis() - rhs.toMillis(),
-        );
+    pub fn toS(self: Time) Int {
+        return self.toMs() * 1000;
     }
 
-    pub fn gt(self: Time, rhs: Time) bool {
-        return self.toMillis() > rhs.toMillis();
+    pub fn add(self: Time, other: Time) Time {
+        return .us(self.toUs() + other.toUs());
     }
 
-    pub fn lt(self: Time, rhs: Time) bool {
-        return self.toMillis() < rhs.toMillis();
+    pub fn subtract(self: Time, other: Time) Time {
+        return .us(self.toUs() - other.toUs());
     }
 
-    const S_TO_MS = 1000;
+    pub fn gt(self: Time, other: Time) bool {
+        return self.toUs() > other.toUs();
+    }
+
+    pub fn lt(self: Time, other: Time) bool {
+        return self.toUs() < other.toUs();
+    }
 };

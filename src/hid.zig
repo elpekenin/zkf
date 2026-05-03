@@ -1,3 +1,7 @@
+const std = @import("std");
+
+pub const Keycode = u8;
+
 pub const Modifiers = packed struct(u8) {
     left_control: bool,
     left_shift: bool,
@@ -8,20 +12,12 @@ pub const Modifiers = packed struct(u8) {
     right_alt: bool,
     right_gui: bool,
 
-    pub fn add(self: Modifiers, other: Modifiers) Modifiers {
-        return from(self.mask() | other.mask());
+    pub fn add(self: *Modifiers, other: Modifiers) void {
+        self.* = .from(self.mask() | other.mask());
     }
 
-    pub fn setAdd(self: *Modifiers, other: Modifiers) void {
-        self.* = self.add(other);
-    }
-
-    pub fn remove(self: Modifiers, other: Modifiers) Modifiers {
-        return from(self.mask() & ~other.mask());
-    }
-
-    pub fn setRemove(self: *Modifiers, other: Modifiers) void {
-        self.* = self.remove(other);
+    pub fn remove(self: *Modifiers, other: Modifiers) void {
+        self.* = .from(self.mask() & ~other.mask());
     }
 
     pub const empty: Modifiers = @bitCast(@as(u8, 0));
@@ -83,34 +79,29 @@ pub const Modifiers = packed struct(u8) {
     }
 };
 
-pub const Report = extern struct {
+pub const KbToHost = extern struct {
     modifiers: Modifiers,
-    keycodes: [N_KEYCODES]Keycode,
 
-    pub fn initEmpty() Report {
-        return .{
-            .modifiers = .empty,
-            .keycodes = .{0} ** N_KEYCODES,
-        };
+    keycodes: [n_keycodes]Keycode,
+
+    pub const empty: KbToHost = .{
+        .modifiers = .empty,
+        .keycodes = @splat(0),
+    };
+
+    pub fn eql(self: *const KbToHost, other: KbToHost) bool {
+        return self.modifiers == other.modifiers and std.mem.eql(Keycode, self.keycodes, other.keycodes);
     }
 
-    pub fn eql(self: *const Report, rhs: Report) bool {
-        return std.mem.eql(
-            u8,
-            std.mem.asBytes(self),
-            std.mem.asBytes(&rhs),
-        );
+    pub fn addMods(self: *KbToHost, modifiers: Modifiers) void {
+        self.modifiers.add(modifiers);
     }
 
-    pub fn addMods(self: *Report, modifiers: Modifiers) void {
-        self.modifiers.setAdd(modifiers);
+    pub fn removeMods(self: *KbToHost, modifiers: Modifiers) void {
+        self.modifiers.remove(modifiers);
     }
 
-    pub fn removeMods(self: *Report, modifiers: Modifiers) void {
-        self.modifiers.setRemove(modifiers);
-    }
-
-    pub fn addKc(self: *Report, keycode: Keycode) !void {
+    pub fn addKc(self: *KbToHost, keycode: Keycode) void {
         for (&self.keycodes) |*kc| {
             // already in place
             if (kc.* == keycode) {
@@ -120,28 +111,30 @@ pub const Report = extern struct {
             // empty slot
             if (kc.* == 0) {
                 kc.* = keycode;
+                std.log.debug("{} added to report", .{keycode});
                 return;
             }
         }
 
-        return error.OutOfMemory;
+        std.log.err("HID report is full, can't add {}", .{keycode});
     }
 
-    pub fn removeKc(self: *Report, keycode: Keycode) !void {
+    pub fn removeKc(self: *KbToHost, keycode: Keycode) void {
         for (&self.keycodes) |*kc| {
             if (kc.* == keycode) {
                 kc.* = 0;
+                std.log.debug("{} removed from report", .{keycode});
                 return;
             }
         }
 
-        return error.NotFound;
+        std.log.err("{} not in HID report, can't remove it", .{keycode});
     }
 
-    const N_KEYCODES = 6;
+    const n_keycodes = 6;
 };
 
-pub const HostLeds = packed struct(u8) {
+pub const HostToKb = packed struct(u8) {
     num: bool,
     caps: bool,
     scroll: bool,
@@ -149,47 +142,48 @@ pub const HostLeds = packed struct(u8) {
     kana: bool,
     _: u3,
 
-    pub const empty: HostLeds = @bitCast(@as(u8, 0));
+    pub const empty: HostToKb = @bitCast(@as(u8, 0));
 };
 
 pub const State = extern struct {
-    report: Report,
-    host_leds: HostLeds,
+    report: KbToHost,
+    host_leds: HostToKb,
 
-    pub fn initEmpty() State {
-        return .{
-            .report = .initEmpty(),
-            .host_leds = .empty,
-        };
-    }
+    pub const empty: State = .{
+        .report = .empty,
+        .host_leds = .empty,
+    };
 };
 
 const t = std.testing;
-pub const Keycode = u8;
-
-const std = @import("std");
 
 test "Modifiers.add" {
     var expected: Modifiers = .empty;
     expected.left_shift = true;
     expected.left_control = true;
 
-    const actual = Modifiers.empty.add(.ls).add(.lc);
+    var actual: Modifiers = .empty;
+    actual.add(.ls);
+    actual.add(.lc);
 
     try t.expectEqual(expected, actual);
 }
 
 test "Modifiers.pop" {
     const expected: Modifiers = .lc;
-    const actual = Modifiers.ls.add(.lc).remove(.ls);
+
+    var actual: Modifiers = .ls;
+    actual.add(.lc);
+    actual.remove(.ls);
+
     try t.expectEqual(expected, actual);
 }
 
 test "Report.addKeycode" {
-    var report: Report = .initEmpty();
+    var report: KbToHost = .empty;
 
     const keycode: Keycode = 123;
-    try report.addKc(keycode);
+    report.addKc(keycode);
 
     for (report.keycodes) |actual| {
         if (actual == keycode) {
@@ -198,22 +192,4 @@ test "Report.addKeycode" {
     } else {
         return error.KeycodeNotAdded;
     }
-}
-
-test "Report.addKeycode no error on duplicate" {
-    var report: Report = .initEmpty();
-
-    const keycode: Keycode = 123;
-    try report.addKc(keycode);
-    report.addKc(keycode) catch return error.ShouldNotError;
-}
-
-test "Report.addKeycode error if full" {
-    var report: Report = .initEmpty();
-
-    for (0..Report.N_KEYCODES) |i| {
-        try report.addKc(@intCast(i + 1));
-    }
-
-    try t.expectError(error.OutOfMemory, report.addKc(123));
 }

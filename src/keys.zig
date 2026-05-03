@@ -1,25 +1,32 @@
-pub const MAX = 256;
-pub const Id = Index(MAX);
-pub const State = std.StaticBitSet(MAX);
+const std = @import("std");
+const zkf = @import("zkf");
+
+pub const Id = std.meta.Int(
+    .unsigned,
+    std.math.log2(zkf.options.max_keys),
+);
+
+pub const max = zkf.options.max_keys;
+pub const State = std.bit_set.ArrayBitSet(usize, max);
 
 pub const Debouncer = struct {
-    debounce: Time,
+    debounce: zkf.Time,
     state: State,
-    timers: [MAX]Time,
+    timers: [max]zkf.Time,
 
     pub fn isPressed(self: *const Debouncer, key: Id) bool {
         return self.state.isSet(key);
     }
 
-    pub fn init(debounce: Time) Debouncer {
+    pub fn init(debounce: zkf.Time) Debouncer {
         return .{
             .debounce = debounce,
             .state = .initEmpty(),
-            .timers = @splat(.fromMillis(0)),
+            .timers = @splat(.us(0)),
         };
     }
 
-    pub fn update(self: *Debouncer, time: Time, state: State) State {
+    pub fn update(self: *Debouncer, time: zkf.Time, state: State) State {
         const previous = self.state;
 
         const raw_changes = self.state.xorWith(state);
@@ -40,7 +47,3 @@ pub const Debouncer = struct {
         return previous.xorWith(self.state);
     }
 };
-
-const std = @import("std");
-const Index = @import("types.zig").Index;
-const Time = @import("time.zig").Time;

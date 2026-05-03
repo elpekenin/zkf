@@ -1,211 +1,122 @@
-/// platform-specific logic
-///
-/// to be provided by user, as the "glue" for the lib to interact with hardware
-pub const Portability = struct {
-    pub const GetTime = *const fn () Time;
-    pub const SendHid = *const fn (HidReport) void;
-    pub const ScanKeys = *const fn (*const Keyboard) keys.State;
+const std = @import("std");
 
-    /// time since boot
-    getTime: GetTime,
-    sendHid: SendHid,
-    scanKeys: ScanKeys,
-};
+const zkf = @import("zkf");
+const hid = @import("hid.zig");
+const Keymap = @import("Keymap.zig");
+const keys = @import("keys.zig");
+const Layers = @import("Layers.zig");
 
-/// user configuration of the keyboard (mostly, the keymap)
+const Keyboard = @This();
+
 const Options = struct {
-    debounce: Time,
-    default_layer: Layers.Id = 0,
+    portability: zkf.Portability,
     keymap: Keymap.Raw,
-    portability: Portability,
+    debounce: zkf.Time = .ms(5),
+    default_layer: Layers.Id = 0,
+    combos: []const zkf.Combo = &.{},
 };
 
+// TODO: implement combo handling
+combos: []const zkf.Combo,
 debouncer: keys.Debouncer,
-hid: HidState,
+hid_state: hid.State,
 keymap: Keymap,
 layers: Layers,
-portability: Portability,
+portability: zkf.Portability,
 
-/// create a `Keyboard` instance given its configuration
-pub fn new(comptime options: Options) Keyboard {
-    const n_layers = comptime options.keymap.len;
-    if (n_layers == 0) {
-        errors.fatal("empty keymap", .{});
-    }
-    if (n_layers > Layers.MAX) {
-        errors.fatal("number of layers ({}) exceeds current maximum ({})", .{ n_layers, Layers.MAX });
-    }
-
-    const n_keys = comptime getNKeys(options.keymap);
-    if (n_keys > keys.MAX) {
-        errors.fatal("number of keys ({}) exceeds current maximum ({})", .{ n_keys, keys.MAX });
-    }
-
-    comptime validateKeycodes(options.keymap);
-
+pub fn init(comptime options: Options) Keyboard {
     return .{
+        .combos = options.combos,
         .debouncer = .init(options.debounce),
-        .hid = .initEmpty(),
+        .hid_state = .empty,
         .keymap = .from(options.keymap),
         .layers = .withDefault(options.default_layer),
         .portability = options.portability,
     };
 }
 
-pub fn keycodeGet(self: *const Keyboard, key: keys.Id) Keycode {
-    var layer = self.layers.highest();
-    while (true) : (layer -= 1) {
+pub fn getKeycodeAt(self: *const Keyboard, key: keys.Id) zkf.Keycode {
+    const highest_layer = self.layers.highest();
+
+    var layer: Layers.Id = highest_layer;
+    while (layer >= 0) : (layer -= 1) {
         if (self.layers.isActive(layer)) {
             const keycode = self.keymap.get(layer, key);
             if (keycode != .transparent) {
                 return keycode;
             }
         }
+    }
 
-        // can't go further down
-        if (layer == 0) {
-            return .noop;
-        }
+    std.log.debug("no keycode found for key {}, returning noop", .{key});
+    return .noop;
+}
+
+pub fn sleep(self: *const Keyboard, duration: zkf.Time) void {
+    const start = self.portability.getTime();
+    const deadline = start.add(duration);
+
+    while (true) {
+        const now = self.portability.getTime();
+        if (deadline.lt(now)) return;
     }
 }
 
 pub fn scan(self: *Keyboard) keys.State {
     const now = self.portability.getTime();
-    const reading = self.portability.scanKeys(self);
-    return self.debouncer.update(now, reading);
+    const key_state = self.portability.scanKeys(self);
+
+    return self.debouncer.update(now, key_state);
 }
 
-pub fn processChanges(self: *Keyboard, changes: keys.State) void {
-    var iterator = changes.iterator(.{});
-    while (iterator.next()) |raw| {
-        const id: keys.Id = @intCast(raw);
-
-        const keycode = self.keycodeGet(id);
-        const pressed = self.debouncer.isPressed(id);
-
-        self.process(keycode, pressed) catch |e| {
-            std.log.warn("could not process {} ({})", .{ keycode, e });
-        };
-    }
+pub fn isKeyPressed(self: *const Keyboard, key_id: keys.Id) bool {
+    return self.debouncer.isPressed(key_id);
 }
 
-fn process(self: *Keyboard, keycode: Keycode, pressed: bool) !void {
+pub fn sendReport(self: *const Keyboard) void {
+    return self.portability.sendHid(&self.hid_state.report);
+}
+
+pub fn processKeycode(self: *Keyboard, keycode: zkf.Keycode, pressed: bool) void {
     // make sure the report gets sent after (potentially) modifying it
-    defer self.portability.sendHid(self.hid.report);
+    defer self.sendReport();
+
+    const event: zkf.KeyEvent = .{
+        .keycode = keycode,
+        .pressed = pressed,
+    };
 
     switch (keycode) {
-        .noop,
-        .transparent,
-        => {},
-        .hid => |kc| {
-            if (pressed) {
-                try self.hid.report.addKc(kc);
-            } else {
-                try self.hid.report.removeKc(kc);
-            }
-        },
-        .with_mods => |kc| {
-            if (pressed) {
-                self.hid.report.addMods(kc.modifiers);
-                try self.hid.report.addKc(kc.hid);
-            } else {
-                self.hid.report.removeMods(kc.modifiers);
-                try self.hid.report.removeKc(kc.hid);
-            }
-        },
-        .temporary_layer => |kc| kc.process(self, pressed),
-        .user => |kc| {
-            switch (kc) {
-                .basic => |function| function(pressed),
-                .advanced => |config| config.function(config.data, pressed),
-            }
-        },
+        .noop => {},
+        .transparent => std.log.err("getKeycode should never return transparent", .{}),
+        inline else => |kc| kc.process(self, &event),
     }
 }
 
-fn getNKeys(comptime keymap: Keymap.Raw) usize {
-    const n_keys = keymap[0].len;
-
-    for (1..keymap.len) |i| {
-        const len = keymap[i].len;
-        if (len != n_keys) {
-            errors.fatal(
-                "layer {d} has wrong size. expected {d}, got {d}",
-                .{
-                    i,
-                    n_keys,
-                    len,
-                },
-            );
-        }
-    }
-
-    return n_keys;
+pub fn addKc(self: *Keyboard, keycode: hid.Keycode) void {
+    self.hid_state.report.addKc(keycode);
 }
 
-/// check for erroneous configuration of a keymap
-///
-/// eg: a layer-related keycode that targets an id bigger than the number of layers
-fn validateKeycodes(comptime keymap: Keymap.Raw) void {
-    for (keymap, 0..) |layer, layer_index| {
-        for (layer, 0..) |keycode, key_index| {
-            switch (keycode) {
-                .noop,
-                .transparent,
-                .hid,
-                .with_mods,
-                => {},
-
-                .temporary_layer => |kc| {
-                    if (kc.layer >= keymap.len) {
-                        errors.fatal(
-                            "key {d} in layer {d} targets layer {d}, which is out of range (there are {d} layers)",
-                            .{
-                                key_index,
-                                layer_index,
-                                kc.layer,
-                                keymap.len,
-                            },
-                        );
-                    }
-
-                    switch (keymap[kc.layer][key_index]) {
-                        .transparent => {},
-                        .temporary_layer => |target| if (target.layer != kc.layer) errors.fatal(
-                            "key {d} in layer {d} is MO({d}), but MO({d}) in target layer",
-                            .{
-                                key_index,
-                                layer_index,
-                                kc.layer,
-                                target.layer,
-                            },
-                        ),
-                        else => errors.fatal(
-                            "key {d} in layer {d} is MO({d}), but not the same keycode -or transparent- on target layer",
-                            .{
-                                key_index,
-                                layer_index,
-                                kc.layer,
-                            },
-                        ),
-                    }
-                },
-
-                .user => {},
-            }
-        }
-    }
+pub fn removeKc(self: *Keyboard, keycode: hid.Keycode) void {
+    self.hid_state.report.removeKc(keycode);
 }
 
-const Keyboard = @This();
-const Keycode = keycodes.Keycode;
+pub fn tapKc(
+    self: *Keyboard,
+    keycode: hid.Keycode,
+    options: struct {
+        delay: zkf.Time = .ms(zkf.options.tap_delay_ms),
+    },
+) void {
+    self.addKc(keycode);
+    self.sleep(options.delay);
+    self.removeKc(keycode);
+}
 
-const std = @import("std");
-const errors = @import("errors.zig");
-const keycodes = @import("keycodes.zig");
-const HidReport = @import("hid.zig").Report;
-const HidState = @import("hid.zig").State;
-const Keymap = @import("Keymap.zig");
-const keys = @import("keys.zig");
-const Layers = @import("Layers.zig");
-const Time = @import("time.zig").Time;
+pub fn addMods(self: *Keyboard, modifiers: hid.Modifiers) void {
+    self.hid_state.report.addMods(modifiers);
+}
+
+pub fn removeMods(self: *Keyboard, modifiers: hid.Keycode) void {
+    self.hid_state.report.removeMods(modifiers);
+}
